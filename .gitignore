@@ -16,3 +16,4 @@ Thumbs.db
 
 # Files containing "copy" in their filename (e.g., backups, duplicates)
 *copy*
+test_ftp.py

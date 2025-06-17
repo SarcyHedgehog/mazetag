@@ -1,0 +1,89 @@
+name: Deploy MazeTag to sarcastichedgehog.com (GitHub Pages)
+
+on:
+  push:
+    branches:
+      - main # Or whatever your primary branch for mazetag is
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions: # Add this if using GITHUB_TOKEN for commit, but PAT is often more reliable for cross-repo
+      contents: write # Needed if GITHUB_TOKEN is used for commit/push to the same repo. For cross-repo, PAT is better.
+
+    steps:
+      - name: Checkout mazetag game repository
+        uses: actions/checkout@v4
+        with:
+          path: mazetag_game # Checkout the game code into a subdirectory
+
+      - name: Create config.js for mazetag
+        working-directory: ./mazetag_game # Ensure we are in the game's directory
+        run: |
+          echo "window.APP_CONFIG = {" > config.js
+          echo "  API_KEY: \"${{ secrets.MULTISYNQ_API_KEY }}\"," >> config.js
+          echo "  APP_ID: \"${{ secrets.MULTISYNQ_APP_ID }}\"" >> config.js
+          echo "};" >> config.js
+        shell: bash
+
+      - name: Checkout sarcastichedgehog.com website repository
+        uses: actions/checkout@v4
+        with:
+          # This is correct if your website's repository is indeed named 'sarcastichedgehog.com'
+          # under your 'SarcyHedgehog' account.
+          repository: SarcyHedgehog/sarcastichedgehog.com
+          # This is the local directory name where the website's code will be placed
+          # within the Actions runner. 'website_repo' is a good, clear choice.
+          path: website_repo
+          token: ${{ secrets.GH_PAGES_DEPLOY_TOKEN }}
+
+      - name: Copy game files to website repository
+        run: |
+          # Define the target directory within the website_repo structure
+          # This is where www.sarcastichedgehog.com/mazetag/ will point
+          TARGET_DIR="./website_repo/mazetag" # Ensure 'mazetag' is the desired URL path segment
+
+          echo "Ensuring target directory exists: $TARGET_DIR"
+          mkdir -p "$TARGET_DIR"
+
+          echo "Copying mazetag.html..."
+          cp ./mazetag_game/mazetag.html "$TARGET_DIR/"
+
+          echo "Copying generated config.js..."
+          cp ./mazetag_game/config.js "$TARGET_DIR/"
+
+          # If you have other assets like an 'images' or 'css' folder for mazetag
+          # ensure they are at the root of mazetag_game or adjust paths accordingly.
+          # Example: if you have mazetag_game/images/ and mazetag_game/styles.css
+          # if [ -d "./mazetag_game/images" ]; then
+          #   echo "Copying images directory..."
+          #   cp -r ./mazetag_game/images "$TARGET_DIR/"
+          # fi
+          # if [ -f "./mazetag_game/styles.css" ]; then
+          #   echo "Copying styles.css..."
+          #   cp ./mazetag_game/styles.css "$TARGET_DIR/"
+          # fi
+        shell: bash
+
+      - name: Commit and push changes to website repository
+        env:
+          # Configure Git user for the commit
+          GIT_USER_NAME: "GitHub Actions Bot" # Or your name/bot name
+          GIT_USER_EMAIL: "actions@github.com" # Or your email/bot email
+        run: |
+          cd ./website_repo
+          # Check if there are any changes to commit
+          if [[ -z $(git status --porcelain) ]]; then
+            echo "No changes to commit in website repository."
+          else
+            echo "Changes detected, committing to website repository..."
+            git config user.name "${GIT_USER_NAME}"
+            git config user.email "${GIT_USER_EMAIL}"
+            git add . # Stage all changes (new/modified files in website_repo)
+            git commit -m "Deploy MazeTag game update from mazetag repository"
+            echo "Pushing changes to website repository..."
+            # The branch here should be the one GitHub Pages serves from for your website
+            # Common ones are 'gh-pages', 'main', or 'master'
+            git push origin main # <--- CHANGE THIS (e.g., gh-pages, main)
+          fi
+        shell: bash
