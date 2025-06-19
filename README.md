@@ -68,6 +68,38 @@ This project is actively being developed. Potential future enhancements include:
 *   Importing maze layout data from an external file (e.g., `map1.js`) instead of having it hardcoded in `mazetag.html`.
 *   Developing a game lobby system to allow players to see and join open game sessions or create new private/public ones.
 
+## Release Notes
+
+### Version 0.70 - (Current Date - e.g., June 18, 2024)
+
+**✨ New Features & Enhancements:**
+
+*   **Mobile Experience - Landscape Mode Enforcement:**
+    *   Implemented screen orientation detection for mobile devices.
+    *   The game now actively attempts to lock the screen to landscape mode on mobile.
+    *   A user-friendly overlay is displayed prompting the user to rotate their device if it's detected in portrait mode, improving playability on phones and tablets.
+    *   Initial attempt to enter fullscreen mode on mobile after the first user interaction to provide a more immersive experience (further refinements to fullscreen reliability planned).
+*   **QR Code Display Fix:**
+    *   Resolved an issue where the Multisynq Widget Dock (containing the QR code for joining sessions) was appearing as an empty white square. The initialization timing of the widget dock has been corrected, and it should now display the QR code reliably.
+*   **Improved Input Handling for Turning (from v0.6x series):**
+    *   Previous iterations included significant work to make keyboard and on-screen button turning controls more reliable and less prone to losing the player's turning intent.
+
+**🐛 Bug Fixes:**
+
+*   Corrected the initialization of the Multisynq Widget Dock to ensure QR code and stats are displayed.
+
+**🔧 Behind the Scenes:**
+
+*   Adopted a Git branching strategy for development, separating new features and fixes from the main deployable code.
+*   Set up an automated deployment pipeline using GitHub Actions to publish changes from the `main` branch to the live GitHub Pages site.
+*   Updated `.gitignore` to properly exclude local configuration files and temporary test scripts.
+
+**📝 Known Issues / Next Steps:**
+
+*   Fullscreen mode on mobile devices is not yet consistently hiding all browser UI elements; further investigation and refinement are planned.
+*   Continue investigation into any remaining intermittent player turning issues.
+*   Begin work on textures, sound effects, and importing maze data from external files.
+
 ## Contributing
 
 This is a public repository, and contributions are welcome! If you have ideas for fixes, features, or improvements, please feel free to:
