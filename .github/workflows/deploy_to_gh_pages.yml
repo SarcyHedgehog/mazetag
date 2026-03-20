@@ -55,8 +55,9 @@ jobs:
           echo "Copying generated config.js..."
           cp ./mazetag_game/config.js "$TARGET_DIR/"
 
-          echo "Copying generated map1.js..."
-          cp ./mazetag_game/map1.js "$TARGET_DIR/"
+          echo "Copying generated map*.js..."
+          cp ./mazetag_game/map*.js "$TARGET_DIR/"
+          cp ./mazetag_game/maps.js "$TARGET_DIR/"
 
           # If you have other assets like an 'images' or 'css' folder for mazetag
           # ensure they are at the root of mazetag_game or adjust paths accordingly.
