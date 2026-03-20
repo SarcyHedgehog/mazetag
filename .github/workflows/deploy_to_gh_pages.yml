@@ -46,6 +46,9 @@ jobs:
           echo "Ensuring target directory exists: $TARGET_DIR"
           mkdir -p "$TARGET_DIR"
 
+          echo "Copying index.html (lobby)..."
+          cp ./mazetag_game/index.html "$TARGET_DIR/"
+
           echo "Copying mazetag.html..."
           cp ./mazetag_game/mazetag.html "$TARGET_DIR/"
 
