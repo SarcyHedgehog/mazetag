@@ -51,6 +51,8 @@ jobs:
 
           echo "Copying mazetag.html..."
           cp ./mazetag_game/mazetag.html "$TARGET_DIR/"
+          cp ./mazetag_game/game-main.js "$TARGET_DIR/"
+
 
           echo "Copying generated config.js..."
           cp ./mazetag_game/config.js "$TARGET_DIR/"
