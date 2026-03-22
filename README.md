@@ -4,7 +4,7 @@ A browser-based multiplayer 3D maze game built using **Multisynq (Croquet)** and
 
 Players join the same room and compete in a shared, real-time maze environment.
 
----
+--- 
 
 ## 🚀 Features
 
