@@ -1,171 +1,263 @@
 # MazeTag 3D
 
-A browser-based multiplayer 3D maze game built using **Multisynq (Croquet)** and **Three.js**.
+A browser-based multiplayer 3D maze game built with **Multisynq (Croquet)** and **Three.js**.
 
-Players join the same room and compete in a shared, real-time maze environment.
-
---- 
-
-## 🚀 Features
-
-- Real-time multiplayer (Multisynq)
-- Deterministic game model (no server required)
-- 3D rendering with Three.js
-- Multiple maps (generated via Excel)
-- Simple lobby system with room creation/join
-- Static hosting (GitHub Pages)
+Players join the same room, load the same map, and compete in a shared real-time maze.
 
 ---
 
-## 🧭 How It Works
+## Features
+
+- Real-time multiplayer using Multisynq
+- Deterministic shared game model
+- 3D rendering with Three.js
+- Lobby with:
+  - map selection
+  - create new game
+  - join existing game
+- Multiple map support
+- Variable map sizes
+- Excel-based map creation pipeline
+- Static hosting / GitHub Pages deployment
+
+---
+
+## How it Works
 
 ### Lobby (`index.html`)
 
 The lobby handles:
-- Map selection
-- Creating a new game
-- Joining an existing game
 
-When a game starts, the lobby:
+- selecting a map from `maps.js`
+- creating a room
+- joining a room by name
 
-1. Combines the room name and selected map:
-   ```
-   FridayGame_map1
-   ```
+The selected map is included in the actual session room name so that different maps cannot accidentally join the same multiplayer session.
 
-2. Redirects to:
-   ```
-   mazetag.html?room=FridayGame_map1&map=map1
-   ```
+Example:
 
-👉 This ensures:
-- Each map has its own session
-- No risk of players joining the same room with different maps
+- room entered: `jim`
+- selected map: `map2`
+- actual session room: `jim_map2`
 
----
+The lobby then opens:
 
-### Game (`mazetag.html`)
-
-The game page:
-- Reads `room` and `map` from the URL
-- Dynamically loads the correct `mapX.js` file
-- Starts the Multisynq session
-- Runs the game model and rendering
-
-If a map fails to load, it safely falls back to `map1`.
-
----
-
-## 🗺️ Maps
-
-Maps are stored as:
-
+```text
+mazetag.html?room=jim_map2&map=map2
 ```
+
+This avoids deterministic mismatch bugs where two players might otherwise join the same room while loading different maps.
+
+---
+
+### Game Shell (`mazetag.html`)
+
+`mazetag.html` is now a thin shell.
+
+It is responsible for:
+
+- loading `config.js`
+- loading the selected map file dynamically
+- defining the import map for Three.js
+- providing the HUD / control HTML
+- loading the main game module
+
+---
+
+### Main Game Code (`game-main.js`)
+
+The main game logic has been split out of `mazetag.html` into:
+
+```text
+game-main.js
+```
+
+This makes the project easier to debug and safer to edit.
+
+`game-main.js` now contains:
+
+- constants
+- map interpretation
+- model logic
+- player movement logic
+- input handling
+- rendering
+- session join logic
+
+This was the first step in modularising the project and makes future refactors much easier.
+
+---
+
+## Maps
+
+Maps are stored in files such as:
+
+```text
 map1.js
 map2.js
-...
+map3.js
 ```
 
-Each file defines:
+They now export a richer structure:
 
 ```js
-const MAZE_DATA = [ ... ];
+window.MAP_DATA = {
+  name: "Map Name",
+  width: 16,
+  height: 16,
+  cells: [ ... ]
+};
 ```
 
-Maps are generated from an Excel tool using VBA, which converts cell borders into wall data.
+The game reads:
+
+- `MAP_DATA.name`
+- `MAP_DATA.width`
+- `MAP_DATA.height`
+- `MAP_DATA.cells`
+
+This allows maps to have different sizes.
+
+Older maps using `MAZE_DATA` were previously supported during transition, but current maps should use `MAP_DATA`.
 
 ---
 
-### Map List (`maps.js`)
+## Map Registry (`maps.js`)
 
-Available maps are defined in:
+Available maps are listed in `maps.js`, for example:
 
 ```js
 window.MAZE_MAPS = [
   { id: "map1", title: "Classic Maze", file: "map1.js" },
-  { id: "map2", title: "Tighter Maze", file: "map2.js" }
+  { id: "map2", title: "Open Arena", file: "map2.js" },
+  { id: "map3", title: "Compact 10x10", file: "map3.js" }
 ];
 ```
 
 To add a new map:
-1. Generate `mapX.js`
-2. Add it to `maps.js`
-3. Deploy (no other code changes needed)
+
+1. Create the map in Excel
+2. Export the JS file
+3. Save it as `mapX.js`
+4. Add it to `maps.js`
+
+No other code changes should be needed unless the map introduces genuinely new mechanics.
 
 ---
 
-## 🧠 Architecture
+## Excel Map Tool
 
-- **Model (Multisynq)** → deterministic game state
-- **View (Three.js)** → rendering and controls
-- **Session identity** → based on room name (including map)
+Maps are created in Excel using cell borders.
 
-No central server is required.
+Current workflow:
 
----
+- maze starts at `B2`
+- width is read from `A4`
+- height is read from `A5`
+- VBA exports JavaScript map data
 
-## 🔧 Deployment
+The clean export macro writes:
 
-Deployment is handled via GitHub Actions:
-
-- Copies game files to `sarcastichedgehog.com`
-- Generates `config.js` from secrets
-- Deploys all `map*.js` automatically
-
----
-
-## 📁 Project Structure
-
-```
-index.html         # Lobby (create/join + map select)
-mazetag.html       # Game
-maps.js            # Map registry
-map1.js            # Generated map data
-map2.js            # Additional maps
-config.js          # Generated at deploy (API key)
+```text
+JS_Maze_Output_Clean
 ```
 
+which you then copy from the formula bar into a `map?.js` file.
+
+This makes it easy to create and iterate on maps without touching game code.
+
 ---
 
-## 🛠️ Future Improvements
+## Input Handling
 
-- [x] Multiple map support
+The current movement system supports:
+
+- buffered taps
+- held direction input
+- repeated turns while holding a direction
+- prevention of map/session mismatch
+
+This is still being tuned, but is already much more reliable than the original “exact timing only” approach.
+
+---
+
+## Project Structure
+
+```text
+index.html          # Lobby
+mazetag.html        # Game shell
+game-main.js        # Main game module
+maps.js             # Map registry
+map1.js             # Map data
+map2.js             # Map data
+map3.js             # Map data
+config.js           # Generated at deploy from secrets
+```
+
+---
+
+## Deployment
+
+Deployment is handled via GitHub Actions.
+
+The workflow:
+
+- generates `config.js`
+- copies game files into the website repo
+- deploys map files
+- publishes via the website repository
+
+Because deployment is tied to `main`, feature branches can be used safely for testing and development before merge.
+
+---
+
+## Development Workflow
+
+Recommended workflow:
+
+- `main` = stable / live
+- feature branches = work in progress
+
+Typical flow:
+
+1. branch from `main`
+2. make and test changes locally
+3. push branch
+4. open PR
+5. merge to `main`
+6. deploy runs from `main`
+
+---
+
+## Future Improvements
+
+- [x] Multi-map support
 - [x] Map-aware session separation
-- [ ] Extract game logic into separate JS modules
-- [ ] Add textures (walls, floors, transparency)
-- [ ] Improve mobile controls
-- [ ] Add scoring / game modes
-- [ ] Map preview in lobby
+- [x] Split main game code out of HTML into `game-main.js`
+- [x] Variable-sized map data
+- [ ] Further modularise game code (`game-model.js`, `game-view.js`, etc.)
+- [ ] Wall / floor textures
+- [ ] Transparent wall sections / windows
+- [ ] Map metadata in lobby (size, style, notes)
+- [ ] Better spawn point control
+- [ ] Additional gameplay features such as portals
 
 ---
 
-## 🧪 Development
+## Notes
 
-Run locally with VS Code Live Server or similar.
-
-Example:
-```
-http://localhost:5500/index.html
-```
+- The project is intended to be open source and easy to fork
+- The Excel map creator is part of that workflow
+- Map-specific structure belongs in the map files
+- Session options and gameplay toggles generally belong in the lobby rather than the map definition
 
 ---
 
-## 📜 Notes
+## Credits
 
-- This project is designed to be easily forked and modified
-- Maps are intentionally simple to generate and extend
-- Multisynq ensures all players remain in sync without a server
+Built with:
 
----
-
-## 🎮 Credits
-
-Built using:
 - Multisynq / Croquet
 - Three.js
-
----
-
-## 🦔
 
 Part of the SarcasticHedgehog experiments.

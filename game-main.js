@@ -5,8 +5,21 @@ const API_KEY =
   window.APP_CONFIG?.API_KEY || "234567_Paste_Your_Own_API_Key_Here_7654321";
 const APP_ID = window.APP_CONFIG?.APP_ID || "io.multisynq.mazetag.default";
 
+const GRID_WIDTH = Number(window.MAP_DATA?.width) || 16;
+
+const GRID_HEIGHT = Number(window.MAP_DATA?.height) || 16;
+
+const GRID_CELLS = Array.isArray(window.MAP_DATA?.cells)
+  ? window.MAP_DATA.cells
+  : typeof MAZE_DATA !== "undefined"
+    ? MAZE_DATA
+    : [];
+
+const MAP_NAME = window.MAP_DATA?.name || window.SELECTED_MAP_ID || "map";
+
 const C = Multisynq.Constants;
-C.GRID_SIZE = 16;
+C.GRID_WIDTH = GRID_WIDTH;
+C.GRID_HEIGHT = GRID_HEIGHT;
 C.CELL_WIDTH = 5;
 C.WALL_HEIGHT = 4;
 C.WALL_THICKNESS = 0.5;
@@ -21,6 +34,7 @@ C.MAX_BLUE_CUBES = 45;
 C.MODEL_TICK_RATE = 50;
 C.BALL_RADIUS = (C.CELL_WIDTH / 2) * 0.75;
 C.IMMUNITY_OPACITY = 0.2;
+C.TURN_BUFFER_MS = 600;
 
 const PLAYER_COLORS = [
   0xffffff, 0xff0000, 0xffff00, 0x00ff00, 0x964b00, 0x0000ff, 0xffc0cb,
@@ -32,6 +46,8 @@ const WALL_NORTH = 1;
 const WALL_EAST = 2;
 const WALL_SOUTH = 4;
 const WALL_WEST = 8;
+
+console.log("Loaded map:", MAP_NAME, GRID_WIDTH, "x", GRID_HEIGHT);
 
 // --- Screen Orientation and Fullscreen Logic ---
 let isLockedToLandscape = false;
@@ -219,19 +235,19 @@ class GameModel extends Multisynq.Model {
   }
 
   isCellValidForSpawn(x, y) {
-    if (x < 0 || x >= C.GRID_SIZE || y < 0 || y >= C.GRID_SIZE) return false;
-    const index = y * C.GRID_SIZE + x;
-    const wallInfo = MAZE_DATA[index];
+    if (x < 0 || x >= C.GRID_WIDTH || y < 0 || y >= C.GRID_HEIGHT) return false;
+    const index = y * C.GRID_WIDTH + x;
+    const wallInfo = GRID_CELLS[index];
     if (wallInfo === undefined || wallInfo === 0 || wallInfo === 15)
       return false;
     return true;
   }
 
   findEmptySpawnLocation() {
-    const attempts = C.GRID_SIZE * C.GRID_SIZE;
+    const attempts = C.GRID_WIDTH * C.GRID_HEIGHT;
     for (let i = 0; i < attempts; i++) {
-      const x = Math.floor(this.random() * C.GRID_SIZE);
-      const y = Math.floor(this.random() * C.GRID_SIZE);
+      const x = Math.floor(this.random() * C.GRID_WIDTH);
+      const y = Math.floor(this.random() * C.GRID_HEIGHT);
       if (
         this.isCellValidForSpawn(x, y) &&
         !this.isCellOccupiedByPlayer(x, y)
@@ -239,7 +255,10 @@ class GameModel extends Multisynq.Model {
         return { x, y };
       }
     }
-    return { x: Math.floor(C.GRID_SIZE / 2), y: Math.floor(C.GRID_SIZE / 2) };
+    return {
+      x: Math.floor(C.GRID_WIDTH / 2),
+      y: Math.floor(C.GRID_HEIGHT / 2),
+    };
   }
 
   isCellOccupiedByPlayer(gridX, gridY) {
@@ -421,9 +440,9 @@ class GameModel extends Multisynq.Model {
   }
 
   getCellWallInfo(x, y) {
-    if (x < 0 || x >= C.GRID_SIZE || y < 0 || y >= C.GRID_SIZE) return 15;
-    const index = y * C.GRID_SIZE + x;
-    return MAZE_DATA[index] === undefined ? 15 : MAZE_DATA[index];
+    if (x < 0 || x >= C.GRID_WIDTH || y < 0 || y >= C.GRID_HEIGHT) return 15;
+    const index = y * C.GRID_WIDTH + x;
+    return GRID_CELLS[index] === undefined ? 15 : GRID_CELLS[index];
   }
 
   spawnInitialBlueCubes() {
@@ -437,8 +456,8 @@ class GameModel extends Multisynq.Model {
       attempts = 0;
     let foundValidSpot = false;
     do {
-      newX = Math.floor(this.random() * C.GRID_SIZE);
-      newY = Math.floor(this.random() * C.GRID_SIZE);
+      newX = Math.floor(this.random() * C.GRID_WIDTH);
+      newY = Math.floor(this.random() * C.GRID_HEIGHT);
       attempts++;
       foundValidSpot =
         this.isCellValidForSpawn(newX, newY) &&
@@ -478,6 +497,8 @@ class PlayerBallModel extends Multisynq.Model {
     this.isImmune = false;
     this.immunityEndTime = 0;
     this.pendingTurn = null;
+    this.pendingTurnTime = 0;
+    this.heldTurn = null;
     this.chalkTrail = [];
     this.subscribe(this.id, "control-turn", this.handleControlTurn);
     this.resetPositionToSpawn();
@@ -499,10 +520,21 @@ class PlayerBallModel extends Multisynq.Model {
   }
 
   handleControlTurn(turn) {
+    if (turn === "release") {
+      this.heldTurn = null;
+      return;
+    }
+
+    if (turn !== "left" && turn !== "right") return;
+
     const previousPending = this.pendingTurn;
     this.pendingTurn = turn;
+    this.pendingTurnTime = this.now();
+    this.heldTurn = turn;
+
     console.log(
-      `[${this.viewId}.handleControlTurn] Received turn: ${turn}. Prev pending: ${previousPending}, New pending: ${this.pendingTurn}. Time: ${this.now()}`,
+      `[${this.viewId}.handleControlTurn] Received turn: ${turn}. ` +
+        `Prev pending: ${previousPending}, New pending: ${this.pendingTurn}, Held: ${this.heldTurn}. Time: ${this.pendingTurnTime}`,
     );
   }
   get gameModel() {
@@ -587,17 +619,50 @@ class PlayerBallModel extends Multisynq.Model {
     }
 
     let chosenMove = null;
-    if (this.pendingTurn && this.pendingTurn !== null) {
-      const intendedTurnType = this.pendingTurn;
+
+    // Expire one-shot buffered turn if too old
+    if (
+      this.pendingTurn &&
+      this.now() - this.pendingTurnTime > C.TURN_BUFFER_MS
+    ) {
+      this.pendingTurn = null;
+      this.pendingTurnTime = 0;
+    }
+
+    // Prefer a fresh one-shot buffered turn
+    let intendedTurnType = null;
+
+    const pendingAge = this.pendingTurn
+      ? this.now() - this.pendingTurnTime
+      : Infinity;
+
+    // Prefer fresh pending turn
+    if (this.pendingTurn && pendingAge <= C.TURN_BUFFER_MS) {
+      intendedTurnType = this.pendingTurn;
+    }
+    // Otherwise fall back to held direction
+    else if (this.heldTurn) {
+      intendedTurnType = this.heldTurn;
+    }
+
+    if (intendedTurnType) {
       const intendedTurnDir =
         intendedTurnType === "left"
           ? (this.direction + 3) % 4
           : (this.direction + 1) % 4;
+
       const canMakeIntendedTurn = possibleExits.find(
         (exit) => exit.newDir === intendedTurnDir,
       );
+
       if (canMakeIntendedTurn) {
         chosenMove = canMakeIntendedTurn;
+
+        // One-shot buffered turn is consumed after use
+        if (this.pendingTurn === intendedTurnType) {
+          this.pendingTurn = null;
+          this.pendingTurnTime = 0;
+        }
       }
     }
 
@@ -941,28 +1006,53 @@ class GameView extends Multisynq.View {
   initControls() {
     const btnLeft = document.getElementById("btnLeft");
     const btnRight = document.getElementById("btnRight");
-    const onScreenButtonInteractionEnd = () => this.publishToMyPlayer(null);
 
+    let holdInterval = null;
+
+    const startHold = (dir) => {
+      this.publishToMyPlayer(dir);
+
+      if (holdInterval) clearInterval(holdInterval);
+
+      holdInterval = setInterval(() => {
+        this.publishToMyPlayer(dir);
+      }, 100);
+    };
+
+    const stopHold = () => {
+      if (holdInterval) {
+        clearInterval(holdInterval);
+        holdInterval = null;
+      }
+
+      this.publishToMyPlayer("release");
+    };
+
+    // Touch / mouse
     btnLeft.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      this.publishToMyPlayer("left");
+      startHold("left");
     });
+
     btnRight.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      this.publishToMyPlayer("right");
+      startHold("right");
     });
-    btnLeft.addEventListener("pointerup", onScreenButtonInteractionEnd);
-    btnRight.addEventListener("pointerup", onScreenButtonInteractionEnd);
-    btnLeft.addEventListener("pointerleave", onScreenButtonInteractionEnd);
-    btnRight.addEventListener("pointerleave", onScreenButtonInteractionEnd);
 
+    btnLeft.addEventListener("pointerup", stopHold);
+    btnRight.addEventListener("pointerup", stopHold);
+    btnLeft.addEventListener("pointerleave", stopHold);
+    btnRight.addEventListener("pointerleave", stopHold);
+
+    // Keyboard
     window.addEventListener("keydown", (event) => {
       if (event.repeat) return;
+
       if (event.key === "ArrowLeft") {
-        this.publishToMyPlayer("left");
+        startHold("left");
         btnLeft.classList.add("keyboard-active");
       } else if (event.key === "ArrowRight") {
-        this.publishToMyPlayer("right");
+        startHold("right");
         btnRight.classList.add("keyboard-active");
       } else if (event.key.toLowerCase() === "q") {
         this.viewLerpFactor = Math.min(0.95, this.viewLerpFactor + 0.01);
@@ -972,12 +1062,13 @@ class GameView extends Multisynq.View {
         this.updateLerpFactorDisplay();
       }
     });
+
     window.addEventListener("keyup", (event) => {
       if (event.key === "ArrowLeft") {
-        this.publishToMyPlayer(null);
+        stopHold();
         btnLeft.classList.remove("keyboard-active");
       } else if (event.key === "ArrowRight") {
-        this.publishToMyPlayer(null);
+        stopHold();
         btnRight.classList.remove("keyboard-active");
       }
     });
@@ -992,9 +1083,9 @@ class GameView extends Multisynq.View {
 
   gridToWorld(gridX, gridY, yOffset = C.BALL_RADIUS) {
     return new THREE.Vector3(
-      (gridX - C.GRID_SIZE / 2 + 0.5) * C.CELL_WIDTH,
+      (gridX - C.GRID_WIDTH / 2 + 0.5) * C.CELL_WIDTH,
       yOffset,
-      (gridY - C.GRID_SIZE / 2 + 0.5) * C.CELL_WIDTH,
+      (gridY - C.GRID_HEIGHT / 2 + 0.5) * C.CELL_WIDTH,
     );
   }
 
@@ -1008,14 +1099,16 @@ class GameView extends Multisynq.View {
       color: 0x228b22,
       roughness: 0.9,
     });
+
     const floorGeom = new THREE.PlaneGeometry(
-      C.GRID_SIZE * C.CELL_WIDTH,
-      C.GRID_SIZE * C.CELL_WIDTH,
+      C.GRID_WIDTH * C.CELL_WIDTH,
+      C.GRID_HEIGHT * C.CELL_WIDTH,
     );
     const floorMesh = new THREE.Mesh(floorGeom, floorMaterial);
     floorMesh.rotation.x = -Math.PI / 2;
     floorMesh.receiveShadow = true;
     this.scene.add(floorMesh);
+
     const wallGeomX = new THREE.BoxGeometry(
       C.CELL_WIDTH + C.WALL_THICKNESS,
       C.WALL_HEIGHT,
@@ -1026,14 +1119,18 @@ class GameView extends Multisynq.View {
       C.WALL_HEIGHT,
       C.CELL_WIDTH + C.WALL_THICKNESS,
     );
-    for (let y = 0; y < C.GRID_SIZE; y++) {
-      for (let x = 0; x < C.GRID_SIZE; x++) {
-        const cellIndex = y * C.GRID_SIZE + x;
+
+    for (let y = 0; y < C.GRID_HEIGHT; y++) {
+      for (let x = 0; x < C.GRID_WIDTH; x++) {
+        const cellIndex = y * C.GRID_WIDTH + x;
         const wallInfo =
-          MAZE_DATA[cellIndex] === undefined ? 15 : MAZE_DATA[cellIndex];
-        if (wallInfo === 0 && MAZE_DATA[cellIndex] !== undefined) continue;
-        const cellCenterX = (x - C.GRID_SIZE / 2 + 0.5) * C.CELL_WIDTH;
-        const cellCenterZ = (y - C.GRID_SIZE / 2 + 0.5) * C.CELL_WIDTH;
+          GRID_CELLS[cellIndex] === undefined ? 15 : GRID_CELLS[cellIndex];
+
+        if (wallInfo === 0 && GRID_CELLS[cellIndex] !== undefined) continue;
+
+        const cellCenterX = (x - C.GRID_WIDTH / 2 + 0.5) * C.CELL_WIDTH;
+        const cellCenterZ = (y - C.GRID_HEIGHT / 2 + 0.5) * C.CELL_WIDTH;
+
         if (wallInfo & WALL_NORTH) {
           const wall = new THREE.Mesh(wallGeomX, wallMaterial);
           wall.position.set(
@@ -1045,6 +1142,7 @@ class GameView extends Multisynq.View {
           wall.receiveShadow = true;
           this.scene.add(wall);
         }
+
         if (wallInfo & WALL_EAST) {
           const wall = new THREE.Mesh(wallGeomZ, wallMaterial);
           wall.position.set(
@@ -1056,6 +1154,7 @@ class GameView extends Multisynq.View {
           wall.receiveShadow = true;
           this.scene.add(wall);
         }
+
         if (wallInfo & WALL_SOUTH) {
           const wall = new THREE.Mesh(wallGeomX, wallMaterial);
           wall.position.set(
@@ -1067,6 +1166,7 @@ class GameView extends Multisynq.View {
           wall.receiveShadow = true;
           this.scene.add(wall);
         }
+
         if (wallInfo & WALL_WEST) {
           const wall = new THREE.Mesh(wallGeomZ, wallMaterial);
           wall.position.set(
@@ -1597,8 +1697,8 @@ class GameView extends Multisynq.View {
     } else {
       this.camera.position.set(
         0,
-        C.GRID_SIZE * C.CELL_WIDTH * 0.3,
-        C.GRID_SIZE * C.CELL_WIDTH * 0.1,
+        Math.max(C.GRID_WIDTH, C.GRID_HEIGHT) * C.CELL_WIDTH * 0.3,
+        Math.max(C.GRID_WIDTH, C.GRID_HEIGHT) * C.CELL_WIDTH * 0.1,
       );
       this.camera.lookAt(0, 0, 0);
     }
